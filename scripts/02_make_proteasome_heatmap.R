@@ -1,8 +1,6 @@
-############################################################
 # Proteasome / immunoproteasome heatmap
 # Input: protein abundance matrix with Genes, SA1-4, V1-4, FL1-4
 # Output: PDF and SVG heatmaps
-############################################################
 
 required_packages <- c(
   "readr", "dplyr", "tidyr", "tibble",
@@ -26,10 +24,8 @@ library(circlize)
 library(grid)
 library(svglite)
 
-############################################################
-# Input and output paths
-############################################################
 
+# Input and output paths
 input_file <- "data/processed/data/processed/protein_abundance_matrix_B16_V_FL_SA.tsv"
 output_dir <- "outputs/proteasome"
 
@@ -37,9 +33,7 @@ if (!dir.exists(output_dir)) {
   dir.create(output_dir, recursive = TRUE)
 }
 
-############################################################
 # Read input data
-############################################################
 
 data <- read_tsv(
   input_file,
@@ -48,9 +42,7 @@ data <- read_tsv(
   progress = FALSE
 )
 
-############################################################
 # Sample columns
-############################################################
 
 samples <- c(
   "SA1", "SA2", "SA3", "SA4",
@@ -69,9 +61,7 @@ data <- data %>%
   select(Genes, all_of(samples)) %>%
   mutate(across(-Genes, as.numeric))
 
-############################################################
 # Proteasome gene sets
-############################################################
 
 alpha20S <- c(
   "Psma1", "Psma2", "Psma3", "Psma4",
@@ -110,9 +100,7 @@ genes <- unique(c(
   PA28
 ))
 
-############################################################
 # Component annotation
-############################################################
 
 annotation <- tibble(
   Genes = genes,
@@ -127,9 +115,7 @@ annotation <- tibble(
   )
 )
 
-############################################################
 # Extract proteasome proteins from dataset
-############################################################
 
 df <- data %>%
   separate_rows(Genes, sep = ";") %>%
@@ -139,9 +125,7 @@ df <- data %>%
   summarise(across(all_of(samples), ~ mean(.x, na.rm = TRUE)), .groups = "drop") %>%
   left_join(annotation, by = "Genes")
 
-############################################################
 # Keep biologically defined component order
-############################################################
 
 component_levels <- c(
   "Immunoproteasome core",
@@ -156,9 +140,7 @@ df <- df %>%
   mutate(Component = factor(Component, levels = component_levels)) %>%
   arrange(Component, Genes)
 
-############################################################
 # Calculate group means
-############################################################
 
 df_mean <- df %>%
   mutate(
@@ -168,9 +150,7 @@ df_mean <- df %>%
   ) %>%
   select(Genes, Component, V, FL, SA)
 
-############################################################
 # Build matrix
-############################################################
 
 mat <- df_mean %>%
   select(Genes, V, FL, SA) %>%
@@ -187,9 +167,7 @@ row_zscore <- function(x) {
 
 mat_z <- row_zscore(mat)
 
-############################################################
 # Row annotation
-############################################################
 
 row_components <- df_mean$Component
 names(row_components) <- df_mean$Genes
@@ -210,18 +188,14 @@ row_anno <- rowAnnotation(
   show_annotation_name = FALSE
 )
 
-############################################################
 # Z-score color scale
-############################################################
 
 col_fun <- colorRamp2(
   c(-2, 0, 2),
   c("#2166AC", "white", "#B2182B")
 )
 
-############################################################
 # Build heatmap
-############################################################
 
 ht <- Heatmap(
   mat_z,
@@ -240,9 +214,7 @@ ht <- Heatmap(
   row_title = NULL
 )
 
-############################################################
 # Save outputs
-############################################################
 
 pdf(
   file.path(output_dir, "proteasome_heatmap_group_means.pdf"),
