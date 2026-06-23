@@ -1,6 +1,6 @@
-# Autophagy heatmap for B16 proteomics data
-# Input: protein abundance matrix with Genes, SA1-4, V1-4, FL1-4
-# Output: PDF and SVG heatmaps
+# Autophagy heatmap
+# Input: protein abundance matrix with Genes, V1-4, N5FL1-4, N5CA1-4
+# Output: group-mean heatmap as PDF and SVG
 
 required_packages <- c(
   "readr", "dplyr", "tidyr", "stringr", "tibble",
@@ -26,18 +26,16 @@ library(grid)
 library(svglite)
 library(KEGGREST)
 
-input_file <- "data/processed/protein_abundance_matrix_B16_V_FL_SA.tsv"
+# Input and output paths
+
+input_file <- "data/processed/data/processed/protein_abundance_matrix_B16_V_N5FL_N5CA.tsv"
 output_dir <- "outputs/autophagy"
 
 if (!dir.exists(output_dir)) {
   dir.create(output_dir, recursive = TRUE)
 }
 
-sample_cols <- c(
-  "V1", "V2", "V3", "V4",
-  "FL1", "FL2", "FL3", "FL4",
-  "SA1", "SA2", "SA3", "SA4"
-)
+# Read input data
 
 raw_df <- read_tsv(
   input_file,
@@ -46,7 +44,15 @@ raw_df <- read_tsv(
   progress = FALSE
 )
 
-required_cols <- c("Genes", sample_cols)
+# Sample columns
+
+samples <- c(
+  "V1", "V2", "V3", "V4",
+  "N5FL1", "N5FL2", "N5FL3", "N5FL4",
+  "N5CA1", "N5CA2", "N5CA3", "N5CA4"
+)
+
+required_cols <- c("Genes", samples)
 missing_cols <- setdiff(required_cols, colnames(raw_df))
 
 if (length(missing_cols) > 0) {
@@ -54,9 +60,10 @@ if (length(missing_cols) > 0) {
 }
 
 df <- raw_df %>%
-  select(Genes, all_of(sample_cols)) %>%
-  mutate(across(all_of(sample_cols), as.numeric))
+  select(Genes, all_of(samples)) %>%
+  mutate(across(all_of(samples), as.numeric))
 
+# KEGG helper
 get_kegg_symbols <- function(pathway_id) {
   pathway <- KEGGREST::keggGet(pathway_id)[[1]]
   gene_vec <- pathway$GENE
@@ -67,6 +74,7 @@ get_kegg_symbols <- function(pathway_id) {
 
   symbols <- unname(gene_vec)
   symbols <- symbols[grepl(";", symbols)]
+
   symbols <- symbols %>%
     str_replace(";.*$", "") %>%
     str_trim() %>%
@@ -77,6 +85,8 @@ get_kegg_symbols <- function(pathway_id) {
 }
 
 autophagy_genes <- get_kegg_symbols("path:mmu04140")
+
+# Autophagy component annotation
 
 annotate_autophagy <- function(gene) {
   case_when(
@@ -120,6 +130,8 @@ annotate_autophagy <- function(gene) {
   )
 }
 
+# Extract autophagy proteins
+
 df_long <- df %>%
   separate_rows(Genes, sep = ";") %>%
   mutate(Genes = str_trim(Genes)) %>%
@@ -128,9 +140,11 @@ df_long <- df %>%
 autophagy_df <- df_long %>%
   filter(Genes %in% autophagy_genes) %>%
   group_by(Genes) %>%
-  summarise(across(all_of(sample_cols), ~ mean(.x, na.rm = TRUE)), .groups = "drop") %>%
+  summarise(across(all_of(samples), ~ mean(.x, na.rm = TRUE)), .groups = "drop") %>%
   mutate(Component = annotate_autophagy(Genes)) %>%
   filter(!Component %in% c("Upstream signaling", "Other autophagy KEGG genes"))
+
+# Component order
 
 component_levels <- c(
   "ULK initiation complex",
@@ -145,8 +159,20 @@ autophagy_df <- autophagy_df %>%
   mutate(Component = factor(Component, levels = component_levels)) %>%
   arrange(Component, Genes)
 
-mat <- autophagy_df %>%
-  select(Genes, all_of(sample_cols)) %>%
+# Calculate group means
+
+df_mean <- autophagy_df %>%
+  mutate(
+    V = rowMeans(across(c(V1, V2, V3, V4)), na.rm = TRUE),
+    N5FL = rowMeans(across(c(N5FL1, N5FL2, N5FL3, N5FL4)), na.rm = TRUE),
+    N5CA = rowMeans(across(c(N5CA1, N5CA2, N5CA3, N5CA4)), na.rm = TRUE)
+  ) %>%
+  select(Genes, Component, V, N5FL, N5CA)
+
+# Build matrix
+
+mat <- df_mean %>%
+  select(Genes, V, N5FL, N5CA) %>%
   column_to_rownames("Genes") %>%
   as.matrix()
 
@@ -160,8 +186,10 @@ row_zscore <- function(x) {
 
 mat_z <- row_zscore(mat)
 
-row_components <- autophagy_df$Component
-names(row_components) <- autophagy_df$Genes
+# Row annotation
+
+row_components <- df_mean$Component
+names(row_components) <- df_mean$Genes
 row_components <- row_components[rownames(mat_z)]
 
 component_colors <- c(
@@ -179,10 +207,14 @@ row_anno <- rowAnnotation(
   show_annotation_name = FALSE
 )
 
+# Z-score color scale
+
 col_fun <- colorRamp2(
   c(-2, 0, 2),
   c("#2166AC", "white", "#B2182B")
 )
+
+# Build heatmap
 
 ht <- Heatmap(
   mat_z,
@@ -194,23 +226,33 @@ ht <- Heatmap(
   cluster_row_slices = FALSE,
   cluster_columns = FALSE,
   row_names_side = "left",
-  column_labels = sample_cols,
+  column_labels = c("V", "N5FL", "N5CA"),
   row_names_gp = gpar(fontsize = 8),
-  column_names_gp = gpar(fontsize = 10, fontface = "bold"),
+  column_names_gp = gpar(fontsize = 11, fontface = "bold"),
   column_title = NULL,
   row_title = NULL
 )
 
-pdf(file.path(output_dir, "autophagy_heatmap_replicates.pdf"), width = 8, height = 10)
+# Save outputs
+
+pdf(
+  file.path(output_dir, "autophagy_heatmap_group_means.pdf"),
+  width = 7,
+  height = 10
+)
 draw(ht)
 dev.off()
 
-svglite(file.path(output_dir, "autophagy_heatmap_replicates.svg"), width = 8, height = 10)
+svglite(
+  file.path(output_dir, "autophagy_heatmap_group_means.svg"),
+  width = 7,
+  height = 10
+)
 draw(ht)
 dev.off()
 
 write_tsv(
-  autophagy_df,
+  df_mean,
   file.path(output_dir, "autophagy_genes_used_for_heatmap.tsv")
 )
 
