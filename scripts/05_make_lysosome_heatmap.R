@@ -1,6 +1,6 @@
 # Lysosome / lytic vacuole heatmap
-# Input: protein abundance matrix with Genes, SA1-4, V1-4, FL1-4
-# Output: PDF and SVG heatmaps
+# Input: protein abundance matrix with Genes, V1-4, N5FL1-4, N5CA1-4
+# Output: group-mean heatmap as PDF and SVG
 
 required_packages <- c(
   "readr", "dplyr", "tidyr", "tibble", "stringr",
@@ -25,16 +25,12 @@ library(circlize)
 library(grid)
 library(svglite)
 
-
-# Input and output paths
-input_file <- "data/processed/data/processed/protein_abundance_matrix_B16_V_FL_SA.tsv"
+input_file <- "data/processed/data/processed/protein_abundance_matrix_B16_V_N5FL_N5CA.tsv"
 output_dir <- "outputs/lysosome"
 
 if (!dir.exists(output_dir)) {
   dir.create(output_dir, recursive = TRUE)
 }
-
-# Read input data
 
 data <- read_tsv(
   input_file,
@@ -44,9 +40,9 @@ data <- read_tsv(
 )
 
 samples <- c(
-  "SA1", "SA2", "SA3", "SA4",
   "V1", "V2", "V3", "V4",
-  "FL1", "FL2", "FL3", "FL4"
+  "N5FL1", "N5FL2", "N5FL3", "N5FL4",
+  "N5CA1", "N5CA2", "N5CA3", "N5CA4"
 )
 
 required_cols <- c("Genes", samples)
@@ -60,10 +56,8 @@ data <- data %>%
   select(Genes, all_of(samples)) %>%
   mutate(across(-Genes, as.numeric))
 
-# Lysosome / lytic vacuole genes
-
 cathepsins <- c(
-  "Ctsb", "Ctsd", "Ctsl", "Ctss", "Ctsz", "Ctsc", "Ctsh", "Ctsj", "Ctsk", "Ctso"
+  "Ctsb", "Ctsd", "Ctsl", "Ctss", "Ctsz", "Ctsc", "Ctsh", "Ctsk", "Ctso"
 )
 
 lysosomal_membrane <- c(
@@ -78,7 +72,7 @@ v_atpase <- c(
 
 glycosidases_hydrolases <- c(
   "Gba", "Gaa", "Hexa", "Hexb", "Man2b1", "Neu1", "Gusb", "Glb1", "Arsa", "Arsb",
-  "Acp2", "Acp5", "Dnase2a", "Psap", "Smpd1", "Tpp1", "Cln3", "Cln5"
+  "Acp2", "Acp5", "Dnase2a", "Psap", "Smpd1", "Tpp1"
 )
 
 trafficking_sorting <- c(
@@ -95,8 +89,6 @@ target_genes <- unique(c(
   trafficking_sorting
 ))
 
-# Component annotation
-
 annotation <- tibble(
   Genes = target_genes,
   Component = case_when(
@@ -109,8 +101,6 @@ annotation <- tibble(
   )
 )
 
-# Extract lysosome proteins from dataset
-
 df <- data %>%
   separate_rows(Genes, sep = ";") %>%
   mutate(Genes = str_trim(Genes)) %>%
@@ -118,8 +108,6 @@ df <- data %>%
   group_by(Genes) %>%
   summarise(across(all_of(samples), ~ mean(.x, na.rm = TRUE)), .groups = "drop") %>%
   left_join(annotation, by = "Genes")
-
-# Keep biologically defined component order
 
 component_levels <- c(
   "Cathepsins / proteases",
@@ -133,20 +121,16 @@ df <- df %>%
   mutate(Component = factor(Component, levels = component_levels)) %>%
   arrange(Component, Genes)
 
-# Calculate group means
-
 df_mean <- df %>%
   mutate(
-    V  = rowMeans(across(c(V1, V2, V3, V4)), na.rm = TRUE),
-    FL = rowMeans(across(c(FL1, FL2, FL3, FL4)), na.rm = TRUE),
-    SA = rowMeans(across(c(SA1, SA2, SA3, SA4)), na.rm = TRUE)
+    V = rowMeans(across(c(V1, V2, V3, V4)), na.rm = TRUE),
+    N5FL = rowMeans(across(c(N5FL1, N5FL2, N5FL3, N5FL4)), na.rm = TRUE),
+    N5CA = rowMeans(across(c(N5CA1, N5CA2, N5CA3, N5CA4)), na.rm = TRUE)
   ) %>%
-  select(Genes, Component, V, FL, SA)
-
-# Build matrix
+  select(Genes, Component, V, N5FL, N5CA)
 
 mat <- df_mean %>%
-  select(Genes, V, FL, SA) %>%
+  select(Genes, V, N5FL, N5CA) %>%
   column_to_rownames("Genes") %>%
   as.matrix()
 
@@ -159,8 +143,6 @@ row_zscore <- function(x) {
 }
 
 mat_z <- row_zscore(mat)
-
-# Row annotation
 
 row_components <- df_mean$Component
 names(row_components) <- df_mean$Genes
@@ -180,14 +162,10 @@ row_anno <- rowAnnotation(
   show_annotation_name = FALSE
 )
 
-# Z-score color scale
-
 col_fun <- colorRamp2(
   c(-2, 0, 2),
   c("#2166AC", "white", "#B2182B")
 )
-
-# Build heatmap
 
 ht <- Heatmap(
   mat_z,
@@ -199,16 +177,12 @@ ht <- Heatmap(
   cluster_row_slices = FALSE,
   cluster_columns = FALSE,
   row_names_side = "left",
-  column_labels = c("V", "FL", "SA"),
+  column_labels = c("V", "N5FL", "N5CA"),
   row_names_gp = gpar(fontsize = 8),
   column_names_gp = gpar(fontsize = 11, fontface = "bold"),
   column_title = NULL,
   row_title = NULL
 )
-
-
-# Save outputs
-
 
 pdf(
   file.path(output_dir, "lysosome_heatmap_group_means.pdf"),
