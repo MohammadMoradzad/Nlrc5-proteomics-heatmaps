@@ -1,8 +1,6 @@
-############################################################
 # Autophagy heatmap for B16 proteomics data
 # Input: protein abundance matrix with Genes, SA1-4, V1-4, FL1-4
 # Output: PDF and SVG heatmaps
-############################################################
 
 required_packages <- c(
   "readr", "dplyr", "tidyr", "stringr", "tibble",
