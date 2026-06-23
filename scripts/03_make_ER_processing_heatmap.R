@@ -1,6 +1,6 @@
 # ER protein processing heatmap
-# Input: protein abundance matrix with Genes, N5CA-4, V1-4, N5FL1-4
-# Output: PDF and SVG heatmaps
+# Input: protein abundance matrix with Genes, V1-4, N5FL1-4, N5CA1-4
+# Output: group-mean heatmap as PDF and SVG
 
 required_packages <- c(
   "readr", "dplyr", "tidyr", "tibble", "stringr",
@@ -25,16 +25,12 @@ library(circlize)
 library(grid)
 library(svglite)
 
-# Input and output paths
-
 input_file <- "data/processed/data/processed/protein_abundance_matrix_B16_V_N5FL_N5CA.tsv"
 output_dir <- "outputs/ER_processing"
 
 if (!dir.exists(output_dir)) {
   dir.create(output_dir, recursive = TRUE)
 }
-
-# Read input data
 
 data <- read_tsv(
   input_file,
@@ -43,12 +39,10 @@ data <- read_tsv(
   progress = FALSE
 )
 
-# Sample columns
-
 samples <- c(
-  "N5CA1", "N5CA2", "N5CA3", "N5CA4",
   "V1", "V2", "V3", "V4",
-  "N5FL1", "N5FL2", "N5FLL3", "N5FL4"
+  "N5FL1", "N5FL2", "N5FL3", "N5FL4",
+  "N5CA1", "N5CA2", "N5CA3", "N5CA4"
 )
 
 required_cols <- c("Genes", samples)
@@ -62,7 +56,6 @@ data <- data %>%
   select(Genes, all_of(samples)) %>%
   mutate(across(-Genes, as.numeric))
 
-# ER protein processing genes
 target_genes <- c(
   "Fbxo2", "Eif2s1", "Hspbp1", "Cryab", "Ckap4", "Ganab", "Sec23a", "Mapk9",
   "Capn1", "Hsph1", "Hspa4l", "Syvn1", "Derl1", "Ube2g1", "Edem3", "Atxn3",
@@ -73,8 +66,6 @@ target_genes <- c(
   "Bcl2", "Sec31a", "Sec24b", "Rrbp1", "Ostc", "Sec63", "Ssr4", "Amfr",
   "Mogs", "Ddost"
 )
-
-# Component annotation
 
 annotation <- tibble(
   Genes = target_genes,
@@ -116,8 +107,6 @@ annotation <- tibble(
   )
 )
 
-# Extract ER processing proteins from dataset
-
 df <- data %>%
   separate_rows(Genes, sep = ";") %>%
   mutate(Genes = str_trim(Genes)) %>%
@@ -125,8 +114,6 @@ df <- data %>%
   group_by(Genes) %>%
   summarise(across(all_of(samples), ~ mean(.x, na.rm = TRUE)), .groups = "drop") %>%
   left_join(annotation, by = "Genes")
-
-# Keep biologically defined component order
 
 component_levels <- c(
   "COPII trafficking",
@@ -142,20 +129,16 @@ df <- df %>%
   mutate(Component = factor(Component, levels = component_levels)) %>%
   arrange(Component, Genes)
 
-# Calculate group means
-
 df_mean <- df %>%
   mutate(
-    V  = rowMeans(across(c(V1, V2, V3, V4)), na.rm = TRUE),
-    FL = rowMeans(across(c(N5FL1, N5FL2, N5FL3, N5FL4)), na.rm = TRUE),
-    SA = rowMeans(across(c(N5CA1, N5CA2, N5CA3, N5CA4)), na.rm = TRUE)
+    V = rowMeans(across(c(V1, V2, V3, V4)), na.rm = TRUE),
+    N5FL = rowMeans(across(c(N5FL1, N5FL2, N5FL3, N5FL4)), na.rm = TRUE),
+    N5CA = rowMeans(across(c(N5CA1, N5CA2, N5CA3, N5CA4)), na.rm = TRUE)
   ) %>%
-  select(Genes, Component, V, FL, SA)
-
-# Build matrix
+  select(Genes, Component, V, N5FL, N5CA)
 
 mat <- df_mean %>%
-  select(Genes, V, N5CA, N5CA) %>%
+  select(Genes, V, N5FL, N5CA) %>%
   column_to_rownames("Genes") %>%
   as.matrix()
 
@@ -168,8 +151,6 @@ row_zscore <- function(x) {
 }
 
 mat_z <- row_zscore(mat)
-
-# Row annotation
 
 row_components <- df_mean$Component
 names(row_components) <- df_mean$Genes
@@ -191,14 +172,10 @@ row_anno <- rowAnnotation(
   show_annotation_name = FALSE
 )
 
-# Z-score color scale
-
 col_fun <- colorRamp2(
   c(-2, 0, 2),
   c("#2166AC", "white", "#B2182B")
 )
-
-# Build heatmap
 
 ht <- Heatmap(
   mat_z,
@@ -216,8 +193,6 @@ ht <- Heatmap(
   column_title = NULL,
   row_title = NULL
 )
-
-# Save outputs
 
 pdf(
   file.path(output_dir, "ER_processing_heatmap_group_means.pdf"),
